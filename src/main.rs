@@ -6,7 +6,7 @@ use std::{env, process};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::visit::{visit_file, Visit};
-use syn::{Block, Expr, Ident, Macro, Result, Token};
+use syn::{Block, Expr, Ident, Macro, Result, Token, Local};
 
 #[derive(Debug)]
 struct Statement {
@@ -73,6 +73,15 @@ struct IfChain {
     r#else: Option<Else>,
 }
 
+impl IfChain {
+    fn end(&self) -> LineColumn {
+        match &self.r#else {
+            Some(r#else) => r#else.block.span().end(),
+            None => self.then.block.span().end(),
+        }
+    }
+}
+
 impl Parse for IfChain {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut statements: Vec<Statement> = Vec::new();
@@ -116,22 +125,14 @@ impl<'ast> Visit<'ast> for Visitor<'ast> {
     }
 }
 
-fn replace_in_line(line: &mut String, with: &str, char_start: usize, char_end: usize) {
+fn replace_chars(line: &mut String, with: &str, char_start: usize, char_end: usize) {
     let (byte_start, _) = line.char_indices().nth(char_start).unwrap();
     let byte_end = match line.char_indices().nth(char_end) {
         Some((byte_end, _)) => byte_end,
-        None => {
-            assert_eq!(line.chars().count(), char_end, "char_end out of range");
-            line.len()
-        }
+        None => line.len(),
     };
 
     line.replace_range(byte_start..byte_end, with);
-}
-
-fn truncate_line(line: &mut String, char_len: usize) {
-    let (byte_len, _) = line.char_indices().nth(char_len).unwrap();
-    line.truncate(byte_len);
 }
 
 fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
@@ -143,39 +144,17 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
     let (if_chain, mac) = visitor.found?;
 
     let mut lines: Vec<String> = input.lines().map(String::from).collect();
-    truncate_line(
-        &mut lines[mac.span().start().line - 1],
-        mac.span().start().column,
-    );
-
-    replace_in_line(
-        &mut lines[mac.span().end().line - 1],
-        "",
-        0,
-        mac.span().end().column,
-    );
 
     for statement in &if_chain.statements {
         let semi = statement.semi.span.start();
 
-        replace_in_line(&mut lines[semi.line - 1], "", semi.column, semi.column + 1);
+        replace_chars(&mut lines[semi.line - 1], "", semi.column, semi.column + 1);
     }
 
     let (first, rest) = if_chain.statements.split_first().unwrap();
 
-    {
-        let col = first.start().column;
-        let with = if first.if_token.is_some() { "" } else { "if " };
-        replace_in_line(
-            &mut lines[first.start().line - 1],
-            with,
-            col - deindent,
-            col,
-        );
-    }
-
     for statement in rest {
-        replace_in_line(
+        replace_chars(
             &mut lines[statement.start().line - 1],
             "&& ",
             statement.start().column,
@@ -190,7 +169,7 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
         let start = then_span.start().line - 1;
         let end = brace_span.end().line;
 
-        replace_in_line(
+        replace_chars(
             &mut lines[start],
             "",
             then_span.start().column,
@@ -200,13 +179,56 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
         (start, end)
     };
 
-    if let Some(r#else) = if_chain.r#else {
+    if let Some(r#else) = &if_chain.r#else {
         end = r#else.block.brace_token.span.end().line;
     }
 
     for line in start..end {
-        replace_in_line(&mut lines[line], "", 0, deindent);
+        let line = &mut lines[line];
+        if line.len() > deindent {
+            replace_chars(line, "", 0, deindent);
+        }
     }
+
+    let delete = {
+        let mac_line = mac.span().start().line - 1;
+        let mac_col = mac.span().start().column;
+
+        let stmt_line = first.start().line - 1;
+        let stmt_col = first.start().column;
+
+        let mut stmt_str = lines[stmt_line].clone();
+        replace_chars(
+            &mut stmt_str,
+            if first.if_token.is_some() { "" } else { "if " },
+            0,
+            stmt_col,
+        );
+
+        replace_chars(&mut lines[mac_line], &stmt_str, mac_col, usize::MAX);
+        stmt_line
+    };
+
+    {
+        let penultimate = if_chain.end().line - 1;
+        let penultimate_str = lines[penultimate].clone();
+
+        let last = mac.span().end().line - 1;
+
+        let mut line = &mut lines[last];
+
+        replace_chars(
+            &mut line,
+            "",
+            0,
+            mac.span().end().column,
+        );
+
+        line.insert_str(0, &penultimate_str);
+        lines.remove(penultimate);
+    };
+
+    lines.remove(delete);
 
     Some(lines.join("\n"))
 }
@@ -218,7 +240,7 @@ fn help(opts: &Options, exit_code: i32) -> ! {
 
 fn main() {
     let mut opts = Options::new();
-    opts.optopt("d", "deindent", "number of chars to deindent by", "N");
+    opts.optopt("d", "deindent", "number of chars to deindent by (default 4)", "N");
     opts.optflag("h", "help", "print this help");
 
     let matches = match opts.parse(env::args_os().skip(1)) {
@@ -233,10 +255,12 @@ fn main() {
     }
 
     let deindent: usize = matches
-        .opt_get_default("deindent", 0)
+        .opt_get_default("deindent", 4)
         .expect("invalid deindent");
 
     for path in &matches.free {
+        println!("{path}");
+
         let mut file = File::options()
             .read(true)
             .write(true)
@@ -251,8 +275,6 @@ fn main() {
             modified = true;
             contents = next;
         }
-
-        println!("{contents}");
 
         if modified {
             file.rewind().unwrap();
