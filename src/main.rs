@@ -5,34 +5,68 @@ use std::io::{Read, Seek, Write};
 use std::{env, process};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
+use syn::token::Semi;
 use syn::visit::{visit_file, Visit};
-use syn::{Block, Expr, Ident, Macro, Result, Token, Local};
+use syn::{BinOp, Block, Expr, ExprBinary, Ident, Local, Macro, Result, Stmt, Token};
 
 #[derive(Debug)]
-struct Statement {
-    if_token: Option<Token![if]>,
+struct IfExpr {
+    if_token: Token![if],
     expr: Expr,
-    semi: Token![;],
+    semi_token: Token![;],
+}
+
+#[derive(Debug)]
+enum Statement {
+    IfExpr(IfExpr),
+    Local(Local),
 }
 
 impl Statement {
     fn start(&self) -> LineColumn {
-        let start_span = match self.if_token {
-            Some(token) => token.span,
-            None => self.expr.span(),
-        };
+        match self {
+            Self::IfExpr(if_expr) => if_expr.if_token.span.start(),
+            Self::Local(local) => local.span().start(),
+        }
+    }
 
-        start_span.start()
+    fn start_after_if(&self) -> LineColumn {
+        match self {
+            Self::IfExpr(if_expr) => if_expr.expr.span().start(),
+            Self::Local(local) => local.span().start(),
+        }
+    }
+
+    fn semi(&self) -> Semi {
+        match self {
+            Self::IfExpr(if_expr) => if_expr.semi_token,
+            Self::Local(local) => local.semi_token,
+        }
+    }
+
+    fn expr(&self) -> &Expr {
+        match self {
+            Self::IfExpr(if_expr) => &if_expr.expr,
+            Self::Local(local) => &local.init.as_ref().expect("missing init").1
+        }
     }
 }
 
 impl Parse for Statement {
     fn parse(input: ParseStream) -> Result<Self> {
-        Ok(Self {
-            if_token: input.parse()?,
-            expr: input.call(Expr::parse_without_eager_brace)?,
-            semi: input.parse()?,
-        })
+        if input.peek(Token![if]) {
+            Ok(Self::IfExpr(IfExpr {
+                if_token: input.parse()?,
+                expr: input.parse()?,
+                semi_token: input.parse()?,
+            }))
+        } else {
+            let stmt: Stmt = input.parse()?;
+            match stmt {
+                Stmt::Local(local) => Ok(Self::Local(local)),
+                _ => Err(input.error("expected local")),
+            }
+        }
     }
 }
 
@@ -146,9 +180,32 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
     let mut lines: Vec<String> = input.lines().map(String::from).collect();
 
     for statement in &if_chain.statements {
-        let semi = statement.semi.span.start();
+        enum Parens {
+            BoolOr,
+            Closure,
+        }
 
-        replace_chars(&mut lines[semi.line - 1], "", semi.column, semi.column + 1);
+        let parens = match statement.expr() {
+            Expr::Binary(ExprBinary {op: Binop::Or(_), ..}) => Some(Parens::BoolOr),
+            Expr::Closure(_) => Some(Parens::Closure),
+            _ => None,
+        };
+
+        let parens = is_or;
+
+        let semi = statement.semi().span.start();
+
+        replace_chars(
+            &mut lines[semi.line - 1],
+            if parens { ")" } else { "" },
+            semi.column,
+            semi.column + 1,
+        );
+
+        if parens {
+            let pos = statement.expr().span().start();
+            replace_chars(&mut lines[pos.line - 1], "(", pos.column, pos.column)
+        }
     }
 
     let (first, rest) = if_chain.statements.split_first().unwrap();
@@ -158,7 +215,7 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
             &mut lines[statement.start().line - 1],
             "&& ",
             statement.start().column,
-            statement.expr.span().start().column,
+            statement.start_after_if().column,
         );
     }
 
@@ -200,7 +257,11 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
         let mut stmt_str = lines[stmt_line].clone();
         replace_chars(
             &mut stmt_str,
-            if first.if_token.is_some() { "" } else { "if " },
+            if matches!(first, Statement::IfExpr(_)) {
+                ""
+            } else {
+                "if "
+            },
             0,
             stmt_col,
         );
@@ -217,12 +278,7 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
 
         let mut line = &mut lines[last];
 
-        replace_chars(
-            &mut line,
-            "",
-            0,
-            mac.span().end().column,
-        );
+        replace_chars(&mut line, "", 0, mac.span().end().column);
 
         line.insert_str(0, &penultimate_str);
         lines.remove(penultimate);
@@ -240,7 +296,12 @@ fn help(opts: &Options, exit_code: i32) -> ! {
 
 fn main() {
     let mut opts = Options::new();
-    opts.optopt("d", "deindent", "number of chars to deindent by (default 4)", "N");
+    opts.optopt(
+        "d",
+        "deindent",
+        "number of chars to deindent by (default 4)",
+        "N",
+    );
     opts.optflag("h", "help", "print this help");
 
     let matches = match opts.parse(env::args_os().skip(1)) {
