@@ -1,0 +1,14 @@
+---
+source: src/tests.rs
+expression: contents
+input_file: src/inputs/simple.rs
+---
+fn main() {
+    if x == 1
+        && let Some(y) = f()
+    {
+        stuff
+    } else {
+        other + stuff
+    }
+}

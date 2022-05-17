@@ -9,3 +9,6 @@ edition = "2021"
 getopts = "0.2.21"
 proc-macro2 = { version = "1.0.39", features = ["span-locations"] }
 syn = { version = "1.0.95", features = ["full", "visit", "extra-traits"] }
+
+[dev-dependencies]
+insta = "1.14.0"

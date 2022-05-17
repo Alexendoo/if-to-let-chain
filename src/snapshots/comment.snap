@@ -1,0 +1,20 @@
+---
+source: src/tests.rs
+expression: contents
+input_file: src/inputs/comment.rs
+---
+fn f() {
+    if true
+        // comment at the start TODO: fix or warn?
+        // comment middle
+        && false
+        // comment end
+    {
+        1;
+    }
+    // comment inbetween? :o
+    else {
+        2;
+        // comment after
+    }
+}
