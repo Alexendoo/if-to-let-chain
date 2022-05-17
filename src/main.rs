@@ -47,7 +47,7 @@ impl Statement {
     fn expr(&self) -> &Expr {
         match self {
             Self::IfExpr(if_expr) => &if_expr.expr,
-            Self::Local(local) => &local.init.as_ref().expect("missing init").1
+            Self::Local(local) => &local.init.as_ref().expect("missing init").1,
         }
     }
 }
@@ -180,18 +180,13 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
     let mut lines: Vec<String> = input.lines().map(String::from).collect();
 
     for statement in &if_chain.statements {
-        enum Parens {
-            BoolOr,
-            Closure,
-        }
-
-        let parens = match statement.expr() {
-            Expr::Binary(ExprBinary {op: Binop::Or(_), ..}) => Some(Parens::BoolOr),
-            Expr::Closure(_) => Some(Parens::Closure),
-            _ => None,
-        };
-
-        let parens = is_or;
+        let parens = matches!(
+            statement.expr(),
+            Expr::Binary(ExprBinary {
+                op: BinOp::Or(_),
+                ..
+            }) | Expr::Closure(_)
+        );
 
         let semi = statement.semi().span.start();
 
@@ -289,6 +284,15 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
     Some(lines.join("\n"))
 }
 
+fn modify(contents: &mut String, deindent: usize) -> bool {
+    let mut modified = false;
+    while let Some(next) = if_to_let_chain(contents, deindent) {
+        modified = true;
+        *contents = next;
+    }
+    modified
+}
+
 fn help(opts: &Options, exit_code: i32) -> ! {
     print!("{}", opts.usage("if-to-let-chain [Options] FILE"));
     process::exit(exit_code);
@@ -331,13 +335,7 @@ fn main() {
         let mut contents = String::new();
         file.read_to_string(&mut contents).unwrap();
 
-        let mut modified = false;
-        while let Some(next) = if_to_let_chain(&contents, deindent) {
-            modified = true;
-            contents = next;
-        }
-
-        if modified {
+        if modify(&mut contents, deindent) {
             file.rewind().unwrap();
             file.write_all(contents.as_bytes()).unwrap();
             file.set_len(contents.len() as u64).unwrap();
