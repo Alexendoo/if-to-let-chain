@@ -1,6 +1,7 @@
 fn f() {
+    // pre
     if_chain! {
-        // comment at the start TODO: fix or warn?
+        // comment at the start
         if true;
         // comment middle
         if false;
@@ -8,10 +9,11 @@ fn f() {
         then {
             1;
         }
-        // comment inbetween? :o
+        // comment inbetween
         else {
             2;
         }
         // comment after
     }
+    // post
 }

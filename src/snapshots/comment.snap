@@ -4,17 +4,19 @@ expression: contents
 input_file: src/inputs/comment.rs
 ---
 fn f() {
+    // pre
     if true
-        // comment at the start TODO: fix or warn?
+        // comment at the start
         // comment middle
         && false
         // comment end
     {
         1;
     }
-    // comment inbetween? :o
+    // comment inbetween
     else {
         2;
         // comment after
     }
+    // post
 }

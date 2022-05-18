@@ -169,7 +169,7 @@ fn replace_chars(line: &mut String, with: &str, char_start: usize, char_end: usi
     line.replace_range(byte_start..byte_end, with);
 }
 
-fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
+fn if_to_let_chain(input: &str, deindent: usize, path: &str) -> Option<String> {
     let file = syn::parse_file(input).ok()?;
 
     let mut visitor = Visitor::default();
@@ -204,6 +204,12 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
     }
 
     let (first, rest) = if_chain.statements.split_first().unwrap();
+    if first.start().line - 1 > mac.bang_token.span.start().line {
+        println!(
+            "{path}:{}: found leading comment or blank line, may require manual fixup",
+            first.start().line - 1,
+        );
+    }
 
     for statement in rest {
         replace_chars(
@@ -284,9 +290,9 @@ fn if_to_let_chain(input: &str, deindent: usize) -> Option<String> {
     Some(lines.join("\n"))
 }
 
-fn modify(contents: &mut String, deindent: usize) -> bool {
+fn modify(contents: &mut String, deindent: usize, path: &str) -> bool {
     let mut modified = false;
-    while let Some(next) = if_to_let_chain(contents, deindent) {
+    while let Some(next) = if_to_let_chain(contents, deindent, path) {
         modified = true;
         *contents = next;
     }
@@ -306,6 +312,7 @@ fn main() {
         "number of chars to deindent by (default 4)",
         "N",
     );
+    opts.optflag("v", "verbose", "print extra information");
     opts.optflag("h", "help", "print this help");
 
     let matches = match opts.parse(env::args_os().skip(1)) {
@@ -322,10 +329,9 @@ fn main() {
     let deindent: usize = matches
         .opt_get_default("deindent", 4)
         .expect("invalid deindent");
+    let verbose = matches.opt_present("verbose");
 
     for path in &matches.free {
-        println!("{path}");
-
         let mut file = File::options()
             .read(true)
             .write(true)
@@ -335,10 +341,15 @@ fn main() {
         let mut contents = String::new();
         file.read_to_string(&mut contents).unwrap();
 
-        if modify(&mut contents, deindent) {
+        if modify(&mut contents, deindent, &path) {
+            if verbose {
+                println!("modified {path}");
+            }
             file.rewind().unwrap();
             file.write_all(contents.as_bytes()).unwrap();
             file.set_len(contents.len() as u64).unwrap();
+        } else if verbose {
+            println!("unchanged {path}");
         }
     }
 }

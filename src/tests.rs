@@ -12,7 +12,7 @@ macro_rules! snaps {
                 settings.set_input_file(path);
                 settings.bind(|| {
                     let mut contents = fs::read_to_string(path).unwrap();
-                    super::modify(&mut contents, 4);
+                    super::modify(&mut contents, 4, path);
                     assert_snapshot!(contents);
                 });
             }
