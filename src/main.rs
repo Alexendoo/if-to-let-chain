@@ -170,7 +170,13 @@ fn replace_chars(line: &mut String, with: &str, char_start: usize, char_end: usi
 }
 
 fn if_to_let_chain(input: &str, deindent: usize, path: &str) -> Option<String> {
-    let file = syn::parse_file(input).ok()?;
+    let file = match syn::parse_file(input) {
+        Ok(file) => file,
+        Err(e) => {
+            println!("failed to parse {path}: {e}");
+            return None;
+        }
+    };
 
     let mut visitor = Visitor::default();
     visit_file(&mut visitor, &file);
