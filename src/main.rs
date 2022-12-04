@@ -311,8 +311,30 @@ fn modify(contents: &mut String, deindent: usize, path: &str) -> bool {
     modified
 }
 
+fn handle_file(path: &str, verbose: bool, deindent: usize) {
+    let mut file = File::options()
+        .read(true)
+        .write(true)
+        .open(path)
+        .unwrap_or_else(|e| panic!("failed to open {path}: {e}"));
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+
+    if modify(&mut contents, deindent, &path) {
+        if verbose {
+            println!("modified {path}");
+        }
+        file.rewind().unwrap();
+        file.write_all(contents.as_bytes()).unwrap();
+        file.set_len(contents.len() as u64).unwrap();
+    } else if verbose {
+        println!("unchanged {path}");
+    }
+}
+
 fn help(opts: &Options, exit_code: i32) -> ! {
-    print!("{}", opts.usage("if-to-let-chain [Options] [FILE]"));
+    print!("{}", opts.usage("if-to-let-chain [Options] [PATH]"));
     process::exit(exit_code);
 }
 
@@ -344,24 +366,29 @@ fn main() {
     let verbose = matches.opt_present("verbose");
 
     for path in &matches.free {
-        let mut file = File::options()
-            .read(true)
-            .write(true)
-            .open(path)
-            .unwrap_or_else(|e| panic!("failed to open {path}: {e}"));
+        let meta = std::fs::metadata(&path)
+            .unwrap_or_else(|e| panic!("can't get metadata for {path}: {e}"));
+        if meta.is_file() {
+            handle_file(path, verbose, deindent);
+        } else if meta.is_dir() {
+            for entry in walkdir::WalkDir::new(path) {
+                let entry = entry.unwrap_or_else(|e| panic!("can't traverse child of {path}: {e}"));
+                if !entry.file_type().is_file() {
+                    continue;
+                }
+                let Some(ext) = entry.path().extension() else { continue };
+                if ext != "rs" {
+                    continue;
+                }
 
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).unwrap();
-
-        if modify(&mut contents, deindent, &path) {
-            if verbose {
-                println!("modified {path}");
+                let child_path = entry.path().to_str().unwrap_or_else(|| {
+                    panic!(
+                        "can't get str representation for path '{:?}'",
+                        entry.path().display()
+                    )
+                });
+                handle_file(child_path, verbose, deindent);
             }
-            file.rewind().unwrap();
-            file.write_all(contents.as_bytes()).unwrap();
-            file.set_len(contents.len() as u64).unwrap();
-        } else if verbose {
-            println!("unchanged {path}");
         }
     }
 }
