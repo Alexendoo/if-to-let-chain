@@ -293,7 +293,13 @@ fn if_to_let_chain(input: &str, deindent: usize, path: &str) -> Option<String> {
 
     lines.remove(delete);
 
-    Some(lines.join("\n"))
+    let mut res = lines.join("\n");
+    if input.ends_with("\n") {
+        // Preserve trailing newlines (str::lines() swallows them).
+        res.push('\n');
+    }
+
+    Some(res)
 }
 
 fn modify(contents: &mut String, deindent: usize, path: &str) -> bool {
