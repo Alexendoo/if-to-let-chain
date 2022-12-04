@@ -30,7 +30,7 @@ if let Ok(num) = u16::from_str(s)
 Usage:
 
 ```
-if-to-let-chain [Options] [PATH]
+if-to-let-chain [Options] PATH...
 
 Options:
     -d, --deindent N    number of chars to deindent by (default 4)

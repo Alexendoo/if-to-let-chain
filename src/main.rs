@@ -334,7 +334,7 @@ fn handle_file(path: &str, verbose: bool, deindent: usize) {
 }
 
 fn help(opts: &Options, exit_code: i32) -> ! {
-    print!("{}", opts.usage("if-to-let-chain [Options] [PATH]"));
+    print!("{}", opts.usage("if-to-let-chain [Options] PATH..."));
     process::exit(exit_code);
 }
 
