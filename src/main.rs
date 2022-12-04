@@ -306,7 +306,7 @@ fn modify(contents: &mut String, deindent: usize, path: &str) -> bool {
 }
 
 fn help(opts: &Options, exit_code: i32) -> ! {
-    print!("{}", opts.usage("if-to-let-chain [Options] FILE"));
+    print!("{}", opts.usage("if-to-let-chain [Options] [FILE]"));
     process::exit(exit_code);
 }
 
