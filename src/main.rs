@@ -47,7 +47,7 @@ impl Statement {
     fn expr(&self) -> &Expr {
         match self {
             Self::IfExpr(if_expr) => &if_expr.expr,
-            Self::Local(local) => &local.init.as_ref().expect("missing init").1,
+            Self::Local(local) => &local.init.as_ref().expect("missing init").expr,
         }
     }
 }
@@ -228,7 +228,7 @@ fn if_to_let_chain(input: &str, deindent: usize, path: &str) -> Option<String> {
 
     let (start, mut end) = {
         let then_span = if_chain.then.then_token.span();
-        let brace_span = if_chain.then.block.brace_token.span;
+        let brace_span = if_chain.then.block.brace_token.span.join();
 
         let start = then_span.start().line - 1;
         let end = brace_span.end().line;
@@ -244,7 +244,7 @@ fn if_to_let_chain(input: &str, deindent: usize, path: &str) -> Option<String> {
     };
 
     if let Some(r#else) = &if_chain.r#else {
-        end = r#else.block.brace_token.span.end().line;
+        end = r#else.block.brace_token.span.close().end().line;
     }
 
     for line in start..end {
@@ -376,7 +376,9 @@ fn main() {
                 if !entry.file_type().is_file() {
                     continue;
                 }
-                let Some(ext) = entry.path().extension() else { continue };
+                let Some(ext) = entry.path().extension() else {
+                    continue;
+                };
                 if ext != "rs" {
                     continue;
                 }

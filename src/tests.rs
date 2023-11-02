@@ -1,4 +1,4 @@
-use insta::{Settings, assert_snapshot};
+use insta::{assert_snapshot, Settings};
 use std::fs;
 
 macro_rules! snaps {
