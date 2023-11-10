@@ -1,8 +1,11 @@
 [package]
 name = "if-to-let-chain"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
+description = "Convert macros from the let_chains crate to if chains"
+repository = "https://github.com/Alexendoo/if-to-let-chain"
+categories = ["command-line-utilities", "development-tools"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
